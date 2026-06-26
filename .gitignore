@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# 环境配置
+.env
+
+# 本地模型权重（首次启动自动下载，或 rsync 拷贝）
+models/
+
+# 测试样本与输出
+samples/
+output/
+
+# 日志
+*.log
+
+# PaddleX 官方模型缓存（自动下载的 det 等落到此，绕过 ~/.paddlex 权限问题）
+.paddlex_cache/

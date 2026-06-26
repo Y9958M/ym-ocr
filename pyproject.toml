@@ -1,0 +1,23 @@
+[project]
+name = "ym-ocr"
+version = "0.1.0"
+description = "平台 OCR 服务：PP-OCRv6 + REST + MCP，单进程共享 GPU"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.28",
+    "pillow>=11",
+    "numpy>=2",
+    "pymupdf>=1.25",
+    "mcp>=1.6"
+]
+
+
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+
