@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import uvicorn
 
-from app.config import settings
+from app.config import modelLabel, settings
 
 
 def main() -> None:
     host = settings.YM_OCR_HOST
     port = settings.YM_OCR_PORT
     print(f"[ym-ocr] 启动 http://{host}:{port}")
-    print(f"[ym-ocr] REST /v1/ocr  MCP /mcp  model={settings.OCR_MODEL}")
+    print(f"[ym-ocr] REST /v1/ocr  MCP /mcp  model={modelLabel()}")
     uvicorn.run(
         "app.main:app",
         host=host,

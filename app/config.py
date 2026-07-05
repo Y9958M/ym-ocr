@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # 推理
     OCR_DEVICE: str = ""  # 空=自动探测 gpu:0/cpu
-    OCR_MODEL: str = "PP-OCRv6_small"  # 可切 PP-OCRv6_medium / PP-OCRv6_tiny
+    OCR_MODEL: str = "PP-OCRv6_small"  # det/rec 未单独指定时的默认档位
+    OCR_DET_MODEL: str = ""  # 空=跟随 OCR_MODEL；如 PP-OCRv6_small
+    OCR_REC_MODEL: str = ""  # 空=跟随 OCR_MODEL；如 PP-OCRv6_medium
     OCR_MODEL_DIR: str = "models"  # 本地模型根目录（git 排除）
     OCR_DET_LIMIT_SIDE_LEN: int = 1280  # 检测最长边上限，降显存
     OCR_MAX_CONCURRENT: int = 2  # 推理并发上限，GPU 防爆
@@ -28,6 +30,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def effectiveDetModel() -> str:
+    return settings.OCR_DET_MODEL.strip() or settings.OCR_MODEL.strip()
+
+
+def effectiveRecModel() -> str:
+    return settings.OCR_REC_MODEL.strip() or settings.OCR_MODEL.strip()
+
+
+def modelLabel() -> str:
+    """API meta 用：同档返回单名，混用返回 det+rec。"""
+    det, rec = effectiveDetModel(), effectiveRecModel()
+    if det == rec:
+        return det
+    return f"{det}_det+{rec}_rec"
 
 
 def effectiveDevice() -> str:

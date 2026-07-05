@@ -6,7 +6,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app import engine
-from app.config import settings
+from app.config import modelLabel
 from app.ocrService import recognize
 from app.schemas import OcrResponse
 
@@ -20,7 +20,7 @@ async def health():
 
 @router.get("/ready")
 async def ready():
-    return {"ready": engine.isReady(), "model": settings.OCR_MODEL}
+    return {"ready": engine.isReady(), "model": modelLabel()}
 
 
 @router.post("/v1/ocr", response_model=OcrResponse)

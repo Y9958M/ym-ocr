@@ -1,6 +1,6 @@
 # ym-ocr · 平台 OCR 服务
 
-独立 OCR 平台服务：单进程加载一份 PP-OCRv6，同时提供 **REST** 与 **MCP**，供 apiYmy 及未来多应用调用，也可被 Hermes 直接接入。
+独立 OCR 平台服务：单进程加载一份 PP-OCRv6，同时提供 **REST** 与 **MCP**，供 ym-ats 等应用调用，也可被 Hermes 直接接入。
 
 定位：**平台 OCR 引擎**，只管识别，不管简历/用户/匹配等业务。私有化部署优先本地推理，云端仅作各应用可选 fallback。
 
@@ -9,8 +9,8 @@
 ```mermaid
 flowchart LR
     subgraph Consumers
-        apiYmy[apiYmy 招聘]
-        AppB[未来应用]
+        YmAts[ym-ats 招聘]
+        AppB[其他应用]
         Hermes[Hermes Agent]
         Cursor[Cursor IDE]
     end
@@ -23,7 +23,7 @@ flowchart LR
         Mcp --> Core
         Core --> Engine
     end
-    apiYmy -->|HTTP Bearer| Rest
+    YmAts -->|HTTP Bearer| Rest
     AppB -->|HTTP Bearer| Rest
     Hermes -->|MCP HTTP Bearer| Mcp
     Cursor -->|MCP HTTP Bearer| Mcp
@@ -149,7 +149,7 @@ kw = {
 - `recognize(fileBytes: bytes, filename: str) -> OcrResponse`
 - 图片：`PIL.Image` → `np.array` → `engine.predict`
 - PDF：`fitz.open(stream)` → 逐页 `get_pixmap(matrix=1.5)` → `engine.predict`，合并结果，限 50 页
-- 合并 `fullText = "\n".join(recTexts)` 方便 LLM 直接用
+- 合并 `rec_texts` 列表，消费方按需 `"\n".join(rec_texts)` 取全文
 - `asyncio.Semaphore(OCR_MAX_CONCURRENT)` 限并发（默认 2），GPU 防爆
 
 ### schemas.py — 全平台契约
@@ -157,19 +157,18 @@ kw = {
 ```python
 class OcrMeta(BaseModel):
     pages: int = 1
-    elapsedMs: int = 0
+    elapsed_ms: int = 0
     model: str = "PP-OCRv6_small"
 
 class OcrResponse(BaseModel):
     code: int = 200
     message: str = ""
-    fullText: str = ""
-    recTexts: list[str] = []
-    recBoxes: list[list[int]] = []
+    rec_texts: list[str] = []
+    rec_boxes: list[list[int]] = []
     meta: OcrMeta
 ```
 
-字段名小驼峰；`fullText` 给 LLM/业务直接用，`recTexts`/`recBoxes` 保留坐标。与 apiYmy `OcrResModel` 字段语义对齐。
+字段对齐 Paddle 官方 `prunedResult`（snake_case）：`rec_texts` / `rec_boxes`；全文由消费方 `"\n".join(rec_texts)` 推导。
 
 ### rest.py — REST 适配
 
@@ -219,7 +218,7 @@ app.include_router(rest.router)
 
 ## 接入方式
 
-### 1. REST（给 apiYmy 及未来应用）
+### 1. REST（给 ym-ats 等应用）
 
 ```python
 # client/ymOcrClient.py

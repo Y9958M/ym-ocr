@@ -35,13 +35,12 @@ async def main() -> None:
     print(f"[selfcheck] 识别: {filePath}")
     res = await recognizeFromPath(filePath)
     print(f"[selfcheck] code={res.code} message={res.message}")
-    print(f"[selfcheck] pages={res.meta.pages} elapsedMs={res.meta.elapsedMs} model={res.meta.model}")
-    print(f"[selfcheck] 行数={len(res.recTexts)}")
-    if res.recTexts:
-        preview = res.recTexts[:5]
+    print(f"[selfcheck] pages={res.meta.pages} elapsed_ms={res.meta.elapsed_ms} model={res.meta.model}")
+    print(f"[selfcheck] 行数={len(res.rec_texts)}")
+    if res.rec_texts:
+        preview = res.rec_texts[:5]
         print(f"[selfcheck] 前 5 行: {preview}")
-        assert res.fullText, "fullText 不应为空"
-        assert res.recTexts, "recTexts 不应为空"
+        assert res.rec_texts, "rec_texts 不应为空"
         print("[selfcheck] PASS")
     else:
         print("[selfcheck] 未识别到文本（检查文件或模型）")

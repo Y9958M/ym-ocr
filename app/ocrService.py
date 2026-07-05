@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image
 
 from app import engine
-from app.config import settings
+from app.config import modelLabel, settings
 from app.schemas import OcrMeta, OcrResponse
 
 _semaphore: asyncio.Semaphore | None = None
@@ -81,20 +81,19 @@ def _buildResponse(
     texts: list[str],
     boxes: list[list[int]],
     pages: int,
-    elapsedMs: int,
+    elapsed_ms: int,
 ) -> OcrResponse:
     if not texts:
         return OcrResponse(
             code=400,
             message="未识别到文本",
-            meta=OcrMeta(pages=pages, elapsedMs=elapsedMs, model=settings.OCR_MODEL),
+            meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=modelLabel()),
         )
-    boxesOut = boxes if boxes else [[0, 0, 0, 0]]
+    boxes_out = boxes if boxes else [[0, 0, 0, 0]]
     return OcrResponse(
-        fullText="\n".join(texts),
-        recTexts=texts,
-        recBoxes=boxesOut,
-        meta=OcrMeta(pages=pages, elapsedMs=elapsedMs, model=settings.OCR_MODEL),
+        rec_texts=texts,
+        rec_boxes=boxes_out,
+        meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=modelLabel()),
     )
 
 
@@ -114,14 +113,14 @@ async def recognize(fileBytes: bytes, filename: str) -> OcrResponse:
                     None, _recognizeImageSync, fileBytes
                 )
     except Exception as e:
-        elapsedMs = int((time.monotonic() - started) * 1000)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
         return OcrResponse(
             code=400,
             message=str(e),
-            meta=OcrMeta(pages=0, elapsedMs=elapsedMs, model=settings.OCR_MODEL),
+            meta=OcrMeta(pages=0, elapsed_ms=elapsed_ms, model=modelLabel()),
         )
-    elapsedMs = int((time.monotonic() - started) * 1000)
-    return _buildResponse(texts, boxes, pages, elapsedMs)
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    return _buildResponse(texts, boxes, pages, elapsed_ms)
 
 
 async def recognizeFromPath(filePath: str) -> OcrResponse:

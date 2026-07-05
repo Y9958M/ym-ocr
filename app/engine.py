@@ -18,7 +18,7 @@ os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(Path(__file__).resolve().pare
 
 import numpy as np
 
-from app.config import settings, effectiveDevice
+from app.config import effectiveDetModel, effectiveDevice, effectiveRecModel, settings
 
 _ocr = None
 
@@ -41,10 +41,11 @@ def initEngine() -> None:
     from paddleocr import PaddleOCR
 
     device = effectiveDevice()
-    model = settings.OCR_MODEL
+    detModel = effectiveDetModel()
+    recModel = effectiveRecModel()
     modelDir = Path(settings.OCR_MODEL_DIR)
-    detDir = modelDir / f"{model}_det"
-    recDir = modelDir / f"{model}_rec"
+    detDir = modelDir / f"{detModel}_det"
+    recDir = modelDir / f"{recModel}_rec"
 
     detOk = _modelComplete(detDir)
     recOk = _modelComplete(recDir)
@@ -54,8 +55,8 @@ def initEngine() -> None:
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
-        "text_detection_model_name": f"{model}_det",
-        "text_recognition_model_name": f"{model}_rec",
+        "text_detection_model_name": f"{detModel}_det",
+        "text_recognition_model_name": f"{recModel}_rec",
         "text_det_limit_side_len": settings.OCR_DET_LIMIT_SIDE_LEN,
         "text_det_limit_type": "max",
         "text_recognition_batch_size": 1,
@@ -73,7 +74,7 @@ def initEngine() -> None:
     else:
         print(f"[ym-ocr] 识别模型缺失或不完整，将由 PaddleOCR 自动下载到 {modelDir}")
 
-    print(f"[ym-ocr] PaddleOCR 初始化: device={device} model={model}")
+    print(f"[ym-ocr] PaddleOCR 初始化: device={device} det={detModel} rec={recModel}")
     _ocr = PaddleOCR(**kw)
 
 

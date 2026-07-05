@@ -6,7 +6,7 @@
     from client.ymOcrClient import YmOcrClient
     client = YmOcrClient(baseUrl="http://127.0.0.1:8001", apiKey="xxx")
     res = await client.ocrFile(open("resume.pdf","rb").read(), "resume.pdf")
-    print(res["fullText"])
+    print("\\n".join(res["rec_texts"]))
 """
 
 from __future__ import annotations
