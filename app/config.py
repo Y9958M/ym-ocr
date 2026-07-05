@@ -19,11 +19,12 @@ class Settings(BaseSettings):
 
     # 推理
     OCR_DEVICE: str = ""  # 空=自动探测 gpu:0/cpu
-    OCR_MODEL: str = "PP-OCRv6_medium"  # 可切 PP-OCRv6_small / PP-OCRv6_tiny
+    OCR_MODEL: str = "PP-OCRv6_small"  # 可切 PP-OCRv6_medium / PP-OCRv6_tiny
     OCR_MODEL_DIR: str = "models"  # 本地模型根目录（git 排除）
+    OCR_DET_LIMIT_SIDE_LEN: int = 1280  # 检测最长边上限，降显存
     OCR_MAX_CONCURRENT: int = 2  # 推理并发上限，GPU 防爆
     OCR_PDF_MAX_PAGES: int = 50
-    OCR_PDF_RENDER_SCALE: float = 2.0
+    OCR_PDF_RENDER_SCALE: float = 1.5
 
 
 settings = Settings()

@@ -1,7 +1,7 @@
 """PaddleOCR 单例引擎：启动时加载一次，全局共享，避免重复占显存。
 
 环境变量须在首次 import paddle/paddlex 前生效，故本模块顶层即设置。
-对应 apiYmy ocrSvc.py 的 PIR/OneDNN 兼容处理。
+默认 PP-OCRv6 small + 检测最长边限制 + 识别 batch=1，与 apiYmy ocrSvc.py 对齐。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from pathlib import Path
 
 # 必须在 import paddle / paddlex 之前写入
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+os.environ.setdefault("FLAGS_fraction_of_gpu_memory_to_use", "0.5")
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
 # 官方模型缓存/锁目录指向项目内（默认 ~/.paddlex 可能被 root 占用导致权限错误）
 os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(Path(__file__).resolve().parent.parent / ".paddlex_cache"))
@@ -55,6 +56,10 @@ def initEngine() -> None:
         "use_textline_orientation": False,
         "text_detection_model_name": f"{model}_det",
         "text_recognition_model_name": f"{model}_rec",
+        "text_det_limit_side_len": settings.OCR_DET_LIMIT_SIDE_LEN,
+        "text_det_limit_type": "max",
+        "text_recognition_batch_size": 1,
+        "enable_mkldnn": False,
         "precision": "fp16",
     }
     if detOk:

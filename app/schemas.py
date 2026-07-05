@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class OcrMeta(BaseModel):
     pages: int = 1
     elapsedMs: int = 0
-    model: str = "PP-OCRv6_medium"
+    model: str = "PP-OCRv6_small"
 
 
 class OcrResponse(BaseModel):
