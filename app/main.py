@@ -1,13 +1,14 @@
 """ym-ocr 入口：FastAPI + mount /mcp + Bearer 鉴权 middleware。
 
 启动：
-    .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+    uv run ocr.py
 REST: http://127.0.0.1:8001/v1/ocr
 MCP:  http://127.0.0.1:8001/mcp
 """
 
 from __future__ import annotations
 
+import logging
 import secrets
 from contextlib import asynccontextmanager
 
@@ -15,9 +16,20 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import engine
-from app.config import settings
+from app.config import modelLabel, settings
 from app.mcpServer import mcp
 from app.rest import router as restRouter
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(message)s",
+    datefmt="%H:%M:%S",
+    force=True,
+)
+# 业务日志已含 caller/耗时；关掉与 POST /v1/ocr 重复的 access 行
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger("ym-ocr")
 
 # MCP 的 ASGI app（Streamable HTTP），mount 到 /mcp
 # 官方 mcp 包用 streamable_http_app()，返回 Starlette app（自带 lifespan）
@@ -28,6 +40,12 @@ mcpApp = mcp.streamable_http_app()
 async def lifespan(app: FastAPI):
     """启动时加载 PaddleOCR 单例 + 启动 MCP session manager。"""
     engine.initEngine()
+    logger.info(
+        "ready %s:%s %s",
+        settings.YM_OCR_HOST,
+        settings.YM_OCR_PORT,
+        modelLabel().replace("PP-OCRv6_", "").replace("_det", "").replace("_rec", ""),
+    )
     async with mcp.session_manager.run():
         yield
     engine.shutdownEngine()
@@ -64,5 +82,8 @@ async def authMiddleware(request: Request, call_next):
     auth = request.headers.get("Authorization", "")
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else None
     if not secrets.compare_digest(token or "", apiKey):
+        caller = (request.headers.get("X-Ym-Caller") or "").strip() or "-"
+        client = request.client.host if request.client else "-"
+        logger.warning("auth denied %s %s %s", caller, path, client)
         return JSONResponse({"code": 401, "message": "无效或缺失 API Key"}, status_code=401)
     return await call_next(request)

@@ -21,23 +21,33 @@ mcp.settings.streamable_http_path = "/"
 
 
 @mcp.tool()
-async def ocr_recognize_file(file_path: str) -> str:
+async def ocr_recognize_file(file_path: str, caller: str = "mcp") -> str:
     """对本地图片或 PDF 做 OCR，返回识别全文与逐行结果。
 
     Args:
         file_path: 本机绝对路径，支持 .png/.jpg/.jpeg/.webp/.pdf
+        caller: 调用方标识（如 hermes / cursor），写入服务日志
     """
-    res = await recognizeFromPath(file_path)
+    res = await recognizeFromPath(
+        file_path,
+        caller=(caller or "mcp").strip()[:64] or "mcp",
+        via="mcp",
+    )
     return json.dumps(res.model_dump(), ensure_ascii=False)
 
 
 @mcp.tool()
-async def ocr_recognize_base64(file_base64: str, filename: str = "upload.png") -> str:
+async def ocr_recognize_base64(
+    file_base64: str,
+    filename: str = "upload.png",
+    caller: str = "mcp",
+) -> str:
     """对 Base64 编码的图片或 PDF 做 OCR。
 
     Args:
         file_base64: 文件内容的 Base64 字符串
         filename: 文件名（用于判断 PDF/图片），如 resume.pdf
+        caller: 调用方标识（如 hermes / cursor），写入服务日志
     """
     try:
         data = base64.b64decode(file_base64)
@@ -46,5 +56,10 @@ async def ocr_recognize_base64(file_base64: str, filename: str = "upload.png") -
             {"code": 400, "message": f"Base64 解码失败: {e}"},
             ensure_ascii=False,
         )
-    res = await recognize(data, filename)
+    res = await recognize(
+        data,
+        filename,
+        caller=(caller or "mcp").strip()[:64] or "mcp",
+        via="mcp",
+    )
     return json.dumps(res.model_dump(), ensure_ascii=False)

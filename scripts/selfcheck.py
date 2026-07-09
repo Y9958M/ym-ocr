@@ -33,7 +33,7 @@ async def main() -> None:
     print(f"[selfcheck] 引擎就绪: {engine.isReady()}")
 
     print(f"[selfcheck] 识别: {filePath}")
-    res = await recognizeFromPath(filePath)
+    res = await recognizeFromPath(filePath, caller="selfcheck", via="selfcheck")
     print(f"[selfcheck] code={res.code} message={res.message}")
     print(f"[selfcheck] pages={res.meta.pages} elapsed_ms={res.meta.elapsed_ms} model={res.meta.model}")
     print(f"[selfcheck] 行数={len(res.rec_texts)}")

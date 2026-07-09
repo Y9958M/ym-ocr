@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import time
 
 import numpy as np
@@ -16,6 +17,8 @@ from PIL import Image
 from app import engine
 from app.config import modelLabel, settings
 from app.schemas import OcrMeta, OcrResponse
+
+logger = logging.getLogger("ym-ocr")
 
 _semaphore: asyncio.Semaphore | None = None
 
@@ -83,21 +86,67 @@ def _buildResponse(
     pages: int,
     elapsed_ms: int,
 ) -> OcrResponse:
+    label = modelLabel()
     if not texts:
         return OcrResponse(
             code=400,
             message="未识别到文本",
-            meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=modelLabel()),
+            meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=label),
         )
     boxes_out = boxes if boxes else [[0, 0, 0, 0]]
     return OcrResponse(
         rec_texts=texts,
         rec_boxes=boxes_out,
-        meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=modelLabel()),
+        meta=OcrMeta(pages=pages, elapsed_ms=elapsed_ms, model=label),
     )
 
 
-async def recognize(fileBytes: bytes, filename: str) -> OcrResponse:
+def _shortFile(name: str, maxLen: int = 36) -> str:
+    n = (name or "-").replace("\n", " ")
+    return n if len(n) <= maxLen else n[: maxLen - 1] + "…"
+
+
+def _shortModel(label: str) -> str:
+    """PP-OCRv6_small_det+PP-OCRv6_medium_rec → small+medium；同档 → small。"""
+    s = (label or "").replace("PP-OCRv6_", "")
+    s = s.replace("_det", "").replace("_rec", "")
+    return s or "-"
+
+
+def _logResult(
+    *,
+    caller: str,
+    via: str,
+    filename: str,
+    bytes_len: int,
+    res: OcrResponse,
+) -> None:
+    # 单行：ocr ym-ats rest lpList.png 595k 124L 1p 1214ms small+medium
+    kb = max(1, (bytes_len + 512) // 1024)
+    pages = res.meta.pages
+    pagePart = f" {pages}p" if pages != 1 else ""
+    err = f" ERR {res.message}" if res.code != 200 and res.message else ""
+    logger.info(
+        "ocr %s %s %s %dk %dL%s %dms %s%s",
+        caller or "-",
+        via,
+        _shortFile(filename),
+        kb,
+        len(res.rec_texts),
+        pagePart,
+        res.meta.elapsed_ms,
+        _shortModel(res.meta.model),
+        err,
+    )
+
+
+async def recognize(
+    fileBytes: bytes,
+    filename: str,
+    *,
+    caller: str = "",
+    via: str = "unknown",
+) -> OcrResponse:
     """统一入口：根据文件名分发图片/PDF，限流 + 线程池执行。"""
     started = time.monotonic()
     isPdf = _isPdf(filename)
@@ -114,16 +163,29 @@ async def recognize(fileBytes: bytes, filename: str) -> OcrResponse:
                 )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        return OcrResponse(
+        res = OcrResponse(
             code=400,
             message=str(e),
             meta=OcrMeta(pages=0, elapsed_ms=elapsed_ms, model=modelLabel()),
         )
+        _logResult(
+            caller=caller, via=via, filename=filename, bytes_len=len(fileBytes), res=res
+        )
+        return res
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    return _buildResponse(texts, boxes, pages, elapsed_ms)
+    res = _buildResponse(texts, boxes, pages, elapsed_ms)
+    _logResult(
+        caller=caller, via=via, filename=filename, bytes_len=len(fileBytes), res=res
+    )
+    return res
 
 
-async def recognizeFromPath(filePath: str) -> OcrResponse:
+async def recognizeFromPath(
+    filePath: str,
+    *,
+    caller: str = "",
+    via: str = "mcp",
+) -> OcrResponse:
     """从本机文件路径识别（MCP tool 用）。"""
     path = filePath.strip()
     if not path:
@@ -135,4 +197,4 @@ async def recognizeFromPath(filePath: str) -> OcrResponse:
         return OcrResponse(code=400, message=f"读取文件失败: {e}")
     from pathlib import Path
 
-    return await recognize(data, Path(path).name)
+    return await recognize(data, Path(path).name, caller=caller, via=via)

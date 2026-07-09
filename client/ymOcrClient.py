@@ -4,7 +4,7 @@
 
 用法：
     from client.ymOcrClient import YmOcrClient
-    client = YmOcrClient(baseUrl="http://127.0.0.1:8001", apiKey="xxx")
+    client = YmOcrClient(baseUrl="http://127.0.0.1:8001", apiKey="xxx", caller="apiYmy")
     res = await client.ocrFile(open("resume.pdf","rb").read(), "resume.pdf")
     print("\\n".join(res["rec_texts"]))
 """
@@ -15,13 +15,25 @@ import httpx
 
 
 class YmOcrClient:
-    def __init__(self, baseUrl: str, apiKey: str = "", timeout: float = 120.0):
+    def __init__(
+        self,
+        baseUrl: str,
+        apiKey: str = "",
+        timeout: float = 120.0,
+        caller: str = "",
+    ):
         self.baseUrl = baseUrl.rstrip("/")
         self.apiKey = apiKey.strip()
         self.timeout = timeout
+        self.caller = caller.strip()
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.apiKey}"} if self.apiKey else {}
+        h: dict[str, str] = {}
+        if self.apiKey:
+            h["Authorization"] = f"Bearer {self.apiKey}"
+        if self.caller:
+            h["X-Ym-Caller"] = self.caller[:64]
+        return h
 
     async def ocrFile(self, fileBytes: bytes, filename: str) -> dict:
         """上传文件做 OCR，返回 OcrResponse dict。"""
