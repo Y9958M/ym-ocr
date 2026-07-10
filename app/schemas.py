@@ -9,6 +9,7 @@ class OcrMeta(BaseModel):
     pages: int = 1
     elapsed_ms: int = 0
     model: str = "PP-OCRv6_small"
+    extract_mode: str = "ocr"  # "text" | "ocr"
 
 
 class OcrResponse(BaseModel):

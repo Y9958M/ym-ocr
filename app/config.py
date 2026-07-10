@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     OCR_MAX_CONCURRENT: int = 2  # 推理并发上限，GPU 防爆
     OCR_PDF_MAX_PAGES: int = 50
     OCR_PDF_RENDER_SCALE: float = 1.5
+    OCR_PDF_PREFER_TEXT: bool = True  # 原生文本层优先；扫描件自动回退 OCR
+    OCR_PDF_TEXT_MIN_CHARS_PER_PAGE: int = 30  # 页均字符低于此值视为扫描件
 
 
 settings = Settings()
