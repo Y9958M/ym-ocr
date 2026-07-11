@@ -1,0 +1,22 @@
+[Unit]
+Description=ym-ocr OCR service (PP-OCRv6 REST + MCP)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ym
+Group=ym
+WorkingDirectory=/home/ym/ym-ocr
+EnvironmentFile=/home/ym/ym-ocr/.env
+ExecStart=/home/ym/ym-ocr/.venv/bin/python3 /home/ym/ym-ocr/ocr.py
+Restart=always
+RestartSec=10
+# 模型加载较慢，避免频繁重启
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ym-ocr
+
+[Install]
+WantedBy=multi-user.target

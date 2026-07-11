@@ -1,0 +1,15 @@
+[Unit]
+Description=ym-ocr OCR service (PP-OCRv6 REST + MCP)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ym-ocr
+EnvironmentFile=%h/ym-ocr/.env
+ExecStart=%h/ym-ocr/.venv/bin/python3 %h/ym-ocr/ocr.py
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

@@ -109,12 +109,30 @@ cp .env.example .env
 ### 启动
 
 ```bash
-# 推荐
+# 开发：前台
 uv run ocr.py
 
 # 或后台脚本
 bash scripts/start.sh
 ```
+
+**生产 / 开机自启（systemd）：**
+
+```bash
+# 用户级服务（推荐，无需 sudo）
+bash scripts/install-service.sh
+
+# 系统级服务（需 sudo，多用户机器）
+sudo cp deploy/ym-ocr.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now ym-ocr
+
+# 手动管理（用户级）
+systemctl --user status ym-ocr
+systemctl --user restart ym-ocr
+journalctl --user -u ym-ocr -f
+```
+
+服务单元：[`deploy/ym-ocr.user.service`](deploy/ym-ocr.user.service)（用户级）、[`deploy/ym-ocr.service`](deploy/ym-ocr.service)（系统级）
 
 - REST：`http://127.0.0.1:8001/v1/ocr`
 - MCP：`http://127.0.0.1:8001/mcp`
