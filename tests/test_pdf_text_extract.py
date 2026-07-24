@@ -76,7 +76,7 @@ def test_try_extract_text_pdf():
     finally:
         doc.close()
     assert result is not None
-    texts, boxes, pages = result
+    texts, boxes, pages, _order = result
     assert pages == 1
     joined = "\n".join(texts)
     assert "Education Background" in joined
@@ -99,7 +99,7 @@ def test_try_extract_empty_pdf_returns_none():
 def test_recognize_pdf_prefer_text_mode():
     from app.ocrService import _recognizePdfSync
 
-    texts, boxes, pages, mode = _recognizePdfSync(_make_text_pdf())
+    texts, boxes, pages, mode, _order = _recognizePdfSync(_make_text_pdf())
     assert mode == "text"
     assert pages == 1
     assert any("Melbourne" in t for t in texts)
@@ -123,7 +123,9 @@ def test_recognize_watermark_only_pdf_falls_back_to_ocr():
     from app.ocrService import _recognizePdfSync
 
     try:
-        texts, _boxes, pages, mode = _recognizePdfSync(_make_watermark_only_pdf())
+        texts, _boxes, pages, mode, _order = _recognizePdfSync(
+            _make_watermark_only_pdf()
+        )
     except RuntimeError:
         return  # engine 未初始化
     assert mode == "ocr"
@@ -137,7 +139,7 @@ def test_wangxiang_pdf_text_extract_if_present():
     from app.ocrService import _recognizePdfSync
 
     data = SAMPLE_PDF.read_bytes()
-    texts, _boxes, pages, mode = _recognizePdfSync(data)
+    texts, _boxes, pages, mode, _order = _recognizePdfSync(data)
     joined = "\n".join(texts)
     assert mode == "text"
     assert pages == 9
@@ -155,7 +157,7 @@ def test_li_pdf_ocr_fallback_if_present():
 
     initEngine()
     data = LI_PDF.read_bytes()
-    texts, _boxes, pages, mode = _recognizePdfSync(data)
+    texts, _boxes, pages, mode, _order = _recognizePdfSync(data)
     joined = "\n".join(texts)
     assert mode == "ocr"
     assert pages == 4
@@ -169,7 +171,7 @@ def test_feiwen_pdf_reading_order_if_present():
         return
     from app.ocrService import _recognizePdfSync
 
-    texts, _boxes, pages, mode = _recognizePdfSync(FEIWEN_PDF.read_bytes())
+    texts, _boxes, pages, mode, _order = _recognizePdfSync(FEIWEN_PDF.read_bytes())
     assert mode == "text"
     assert pages == 1
     joined = "\n".join(texts)

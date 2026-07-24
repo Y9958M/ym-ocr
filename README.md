@@ -44,6 +44,8 @@ ym-ocr/
 │   ├── config.py        # 环境变量读取（pydantic-settings）
 │   ├── schemas.py       # OcrResponse / OcrMeta 契约
 │   ├── ocrService.py    # 核心：recognize(bytes, filename)
+│   ├── textNormalize.py # 识别出口字形减噪（NFKC/全角半角）
+│   ├── softWrap.py      # bbox 软换行合并（布局启发）
 │   ├── engine.py        # PaddleOCR 单例 + predict 封装
 │   ├── rest.py          # POST /v1/ocr, GET /health, /ready
 │   └── mcpServer.py     # FastMCP + 2 个 tool → ocrService
@@ -165,6 +167,8 @@ recDir = Path(OCR_MODEL_DIR) / f"{recModel}_rec"
 - 图片：`PIL.Image` → `np.array` → `engine.predict`
 - PDF：`fitz.open(stream)` → 逐页 `get_pixmap(matrix=1.5)` → `engine.predict`，合并结果，限 50 页
 - 合并 `rec_texts` 列表，消费方按需 `"\n".join(rec_texts)` 取全文
+- **字形减噪**（默认开，`OCR_TEXT_NORMALIZE`）：出 `rec_texts` 前做 NFKC + 全角半角 + 零宽剥离；对齐 apiYmy `ocr_text_normalize` / Unicode NFKC；**不做**简历水印关键词过滤（仍由消费方 S0）
+- **软换行合并**（默认开，`OCR_SOFT_WRAP`）：有 `rec_boxes` 时，同列竖直相邻且有续写信号则合并行并合并包围盒；`meta.soft_wrap_merges` 记次数；**不做**简历业务拒识（可行性报告等仍由 ym-ats）。续写正则与 ym-ats `softWrap.py` 对齐（ats 为文本启发式 SSOT）
 - `asyncio.Semaphore(OCR_MAX_CONCURRENT)` 限并发（默认 2），GPU 防爆
 
 ### schemas.py — 全平台契约
@@ -187,7 +191,11 @@ class OcrResponse(BaseModel):
 
 ### rest.py — REST 适配
 
-- `POST /v1/ocr`：multipart `file`，Bearer 鉴权
+- `POST /v1/ocr`：multipart `file` + 可选 `layout`（`legacy`|`columns`|`auto`，默认 `legacy`），Bearer 鉴权
+  - `legacy`：行按 `(y,x)` 排序（历史行为；Boss 截图等保持此默认）
+  - `columns`：有竖缝时先左栏再右栏；无缝仍按 legacy
+  - `auto`：能检出双栏则分栏，否则 legacy（ym-ats 简历 PDF 使用）
+  - 响应 `meta.reading_order`：实际采用的 `legacy`|`columns`
 - `GET /health`：进程存活；`GET /ready`：engine 已加载
 
 ### mcpServer.py — MCP 适配
@@ -232,6 +240,8 @@ app.include_router(rest.router)
 | `OCR_MAX_CONCURRENT` | 2 | 推理并发上限 |
 | `OCR_PDF_MAX_PAGES` | 50 | PDF 页数上限 |
 | `OCR_PDF_RENDER_SCALE` | 1.5 | PDF 渲染 DPI 倍率 |
+| `OCR_TEXT_NORMALIZE` | true | 识别出口字形减噪（NFKC/全角半角/零宽）；无业务过滤 |
+| `OCR_SOFT_WRAP` | true | bbox 软换行合并；无盒则跳过；`meta.soft_wrap_merges` |
 
 ## 接入方式
 

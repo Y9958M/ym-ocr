@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     OCR_PDF_RENDER_SCALE: float = 1.5
     OCR_PDF_PREFER_TEXT: bool = True  # 原生文本层优先；扫描件自动回退 OCR
     OCR_PDF_TEXT_MIN_CHARS_PER_PAGE: int = 30  # 页均字符低于此值视为扫描件
+    # 识别出口字形减噪：NFKC + 全角半角 + 零宽剥离（无业务关键词过滤）
+    OCR_TEXT_NORMALIZE: bool = True
+    # 基于 bbox 的软换行合并（布局启发；无简历业务拒识）
+    OCR_SOFT_WRAP: bool = True
 
 
 settings = Settings()

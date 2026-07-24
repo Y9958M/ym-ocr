@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app import engine
 from app.config import modelLabel
 from app.ocrService import recognize
+from app.readingOrder import normalize_layout
 from app.schemas import OcrResponse
 
 router = APIRouter()
@@ -40,6 +41,10 @@ async def ready():
 async def ocr(
     request: Request,
     file: UploadFile = File(..., description="图片或 PDF"),
+    layout: str = Form(
+        default="legacy",
+        description="阅读顺序：legacy（默认整页y,x）| columns（强制分栏）| auto（双栏才分）",
+    ),
     x_ym_caller: str | None = Header(default=None, alias="X-Ym-Caller"),
 ):
     """对上传的图片或 PDF 做 OCR，返回统一 OcrResponse。"""
@@ -52,6 +57,7 @@ async def ocr(
         file.filename or "upload.bin",
         caller=caller,
         via="rest",
+        layout=normalize_layout(layout),
     )
     return JSONResponse(
         content=res.model_dump(),

@@ -11,6 +11,7 @@ import io
 import logging
 import re
 import time
+from functools import partial
 from typing import Literal
 
 import numpy as np
@@ -18,7 +19,16 @@ from PIL import Image
 
 from app import engine
 from app.config import modelLabel, settings
+from app.readingOrder import (
+    BoxItem,
+    LayoutMode,
+    normalize_layout,
+    order_box_items,
+    order_texts_and_boxes,
+)
 from app.schemas import OcrMeta, OcrResponse
+from app.softWrap import mergeSoftWrappedByBoxes
+from app.textNormalize import normalizeRecTexts
 
 logger = logging.getLogger("ym-ocr")
 
@@ -66,47 +76,63 @@ def _pixmapToRgbArray(pix) -> np.ndarray:
     raise ValueError(f"不支持的 pixmap 通道数: {n}")
 
 
-def _recognizeImageSync(imageBytes: bytes) -> tuple[list[str], list[list[int]], int, ExtractMode]:
-    """单图同步识别，返回 (texts, boxes, pages, mode)。在线程池中执行。"""
-    image = Image.open(io.BytesIO(imageBytes)).convert("RGB")
-    texts, boxes = engine.predict(np.array(image))
-    return texts, boxes, 1, "ocr"
+def _pageTextLinesByReadingOrder(
+    page,
+    *,
+    layout: LayoutMode = "legacy",
+) -> tuple[list[str], str]:
+    """按视觉阅读顺序提取文本行；返回 (lines, reading_order_used)。
 
-
-def _pageTextLinesByReadingOrder(page) -> list[str]:
-    """按视觉阅读顺序（上→下、左→右）提取文本行。
-
-    `get_text("text")` 跟随 PDF 内容流，WPS/复杂排版常把标题写在内容之后，
-    导致「项目经历」出现在项目正文后面。改用 blocks 按 (y0, x0) 排序。
+    layout=legacy：blocks 按 (y0, x0)（历史行为）。
+    layout=auto/columns：几何双栏时先左栏再右栏，各栏内自上而下。
     """
     blocks = page.get_text("blocks") or []
-    # block: (x0, y0, x1, y1, text, block_no, block_type)；0=文本
     text_blocks = [b for b in blocks if len(b) >= 7 and b[6] == 0]
-    text_blocks.sort(key=lambda b: (round(float(b[1]), 0), round(float(b[0]), 0)))
-    lines: list[str] = []
+    items: list[BoxItem] = []
     for b in text_blocks:
-        for ln in (b[4] or "").splitlines():
+        text = (b[4] or "").strip()
+        if not text:
+            continue
+        items.append(
+            BoxItem(
+                text=text,
+                x0=float(b[0]),
+                y0=float(b[1]),
+                x1=float(b[2]),
+                y1=float(b[3]),
+            )
+        )
+    page_w = float(page.rect.width) if hasattr(page, "rect") else None
+    ordered, used = order_box_items(items, layout=layout, page_width=page_w)
+    lines: list[str] = []
+    for it in ordered:
+        for ln in it.text.splitlines():
             s = ln.strip()
             if s:
                 lines.append(s)
-    return lines
+    return lines, used
 
 
 def _tryExtractPdfText(
     doc,
-) -> tuple[list[str], list[list[int]], int] | None:
+    *,
+    layout: LayoutMode = "legacy",
+) -> tuple[list[str], list[list[int]], int, str] | None:
     """尝试从 PDF 文本层提取；页均有效字符不足则返回 None（走 OCR）。
 
-    Boss 图片型 PDF 常带水印文本层（页均 ~150 字符），须过滤后再判阈值。
-    文本行按页面坐标排序，避免内容流乱序。
+    返回 (texts, boxes, pages, reading_order_used)。
     """
     nPages = len(doc)
     if nPages <= 0:
         return None
 
     allTexts: list[str] = []
+    used_order = "legacy"
     for i in range(nPages):
-        allTexts.extend(_pageTextLinesByReadingOrder(doc[i]))
+        lines, used = _pageTextLinesByReadingOrder(doc[i], layout=layout)
+        allTexts.extend(lines)
+        if used == "columns":
+            used_order = "columns"
     if not allTexts:
         return None
 
@@ -119,50 +145,81 @@ def _tryExtractPdfText(
         return None
 
     boxes = [[0, 0, 0, 0] for _ in meaningful]
-    return meaningful, boxes, nPages
+    return meaningful, boxes, nPages, used_order
 
 
-def _ocrPdfPages(doc) -> tuple[list[str], list[list[int]], int]:
-    """逐页渲染后 OCR。"""
+def _ocrPdfPages(
+    doc,
+    *,
+    layout: LayoutMode = "legacy",
+) -> tuple[list[str], list[list[int]], int, str]:
+    """逐页渲染后 OCR；按 layout 重排。"""
     import fitz
 
     nPages = len(doc)
     mat = fitz.Matrix(settings.OCR_PDF_RENDER_SCALE, settings.OCR_PDF_RENDER_SCALE)
     allTexts: list[str] = []
     allBoxes: list[list[int]] = []
+    used_order = "legacy"
     for i in range(nPages):
-        pix = doc[i].get_pixmap(matrix=mat, alpha=False)
+        page = doc[i]
+        pix = page.get_pixmap(matrix=mat, alpha=False)
         arr = _pixmapToRgbArray(pix)
         texts, boxes = engine.predict(arr)
+        page_w = float(page.rect.width) * settings.OCR_PDF_RENDER_SCALE
+        texts, boxes, used = order_texts_and_boxes(
+            texts, boxes, layout=layout, page_width=page_w
+        )
+        if used == "columns":
+            used_order = "columns"
         allTexts.extend(texts)
         allBoxes.extend(boxes)
-    return allTexts, allBoxes, nPages
+    return allTexts, allBoxes, nPages, used_order
 
 
 def _recognizePdfSync(
     pdfBytes: bytes,
-) -> tuple[list[str], list[list[int]], int, ExtractMode]:
-    """多页 PDF：优先文本层，不足则 OCR。返回 (texts, boxes, pages, mode)。"""
+    *,
+    layout: LayoutMode = "legacy",
+) -> tuple[list[str], list[list[int]], int, ExtractMode, str]:
+    """多页 PDF：优先文本层，不足则 OCR。"""
     import fitz
 
+    mode = normalize_layout(layout)
     doc = fitz.open(stream=pdfBytes, filetype="pdf")
     try:
         nPages = len(doc)
         if nPages <= 0:
-            return [], [[0, 0, 0, 0]], 0, "ocr"
+            return [], [[0, 0, 0, 0]], 0, "ocr", "legacy"
         if nPages > settings.OCR_PDF_MAX_PAGES:
             raise ValueError(f"PDF 页数超过上限 ({settings.OCR_PDF_MAX_PAGES})")
 
         if settings.OCR_PDF_PREFER_TEXT:
-            extracted = _tryExtractPdfText(doc)
+            extracted = _tryExtractPdfText(doc, layout=mode)
             if extracted is not None:
-                texts, boxes, pages = extracted
-                return texts, boxes, pages, "text"
+                texts, boxes, pages, used = extracted
+                return texts, boxes, pages, "text", used
 
-        texts, boxes, pages = _ocrPdfPages(doc)
-        return texts, boxes, pages, "ocr"
+        texts, boxes, pages, used = _ocrPdfPages(doc, layout=mode)
+        return texts, boxes, pages, "ocr", used
     finally:
         doc.close()
+
+
+def _recognizeImageSync(
+    imageBytes: bytes,
+    *,
+    layout: LayoutMode = "legacy",
+) -> tuple[list[str], list[list[int]], int, ExtractMode, str]:
+    """单图同步识别。"""
+    image = Image.open(io.BytesIO(imageBytes)).convert("RGB")
+    arr = np.array(image)
+    texts, boxes = engine.predict(arr)
+    page_w = float(arr.shape[1]) if arr.ndim >= 2 else None
+    texts, boxes, used = order_texts_and_boxes(
+        texts, boxes, layout=normalize_layout(layout), page_width=page_w
+    )
+    return texts, boxes, 1, "ocr", used
 
 
 def _isPdf(filename: str) -> bool:
@@ -175,8 +232,14 @@ def _buildResponse(
     pages: int,
     elapsed_ms: int,
     extract_mode: ExtractMode = "ocr",
+    reading_order: str = "legacy",
 ) -> OcrResponse:
     label = modelLabel()
+    soft_wrap_merges = 0
+    if settings.OCR_TEXT_NORMALIZE:
+        texts, boxes = normalizeRecTexts(texts, boxes)
+    if settings.OCR_SOFT_WRAP:
+        texts, boxes, soft_wrap_merges = mergeSoftWrappedByBoxes(texts, boxes)
     if not texts:
         return OcrResponse(
             code=400,
@@ -186,6 +249,8 @@ def _buildResponse(
                 elapsed_ms=elapsed_ms,
                 model=label,
                 extract_mode=extract_mode,
+                reading_order=reading_order,
+                soft_wrap_merges=soft_wrap_merges,
             ),
         )
     boxes_out = boxes if boxes else [[0, 0, 0, 0]]
@@ -197,6 +262,8 @@ def _buildResponse(
             elapsed_ms=elapsed_ms,
             model=label,
             extract_mode=extract_mode,
+            reading_order=reading_order,
+            soft_wrap_merges=soft_wrap_merges,
         ),
     )
 
@@ -221,14 +288,19 @@ def _logResult(
     bytes_len: int,
     res: OcrResponse,
 ) -> None:
-    # 单行：ocr ym-ats rest lpList.png 595k 124L 1p text 1214ms small+medium
+    # 单行：ocr ym-ats rest lpList.png 595k 124L 1p text cols 1214ms small+medium
     kb = max(1, (bytes_len + 512) // 1024)
     pages = res.meta.pages
     pagePart = f" {pages}p" if pages != 1 else ""
     modePart = f" {res.meta.extract_mode}" if res.meta.extract_mode else ""
+    orderPart = (
+        f" {res.meta.reading_order}"
+        if res.meta.reading_order and res.meta.reading_order != "legacy"
+        else ""
+    )
     err = f" ERR {res.message}" if res.code != 200 and res.message else ""
     logger.info(
-        "ocr %s %s %s %dk %dL%s%s %dms %s%s",
+        "ocr %s %s %s %dk %dL%s%s%s %dms %s%s",
         caller or "-",
         via,
         _shortFile(filename),
@@ -236,6 +308,7 @@ def _logResult(
         len(res.rec_texts),
         pagePart,
         modePart,
+        orderPart,
         res.meta.elapsed_ms,
         _shortModel(res.meta.model),
         err,
@@ -248,21 +321,33 @@ async def recognize(
     *,
     caller: str = "",
     via: str = "unknown",
+    layout: str = "legacy",
 ) -> OcrResponse:
-    """统一入口：根据文件名分发图片/PDF，限流 + 线程池执行。"""
+    """统一入口：根据文件名分发图片/PDF，限流 + 线程池执行。
+
+    layout: legacy（默认）| columns | auto — 见 app.readingOrder
+    """
     started = time.monotonic()
     isPdf = _isPdf(filename)
     extract_mode: ExtractMode = "ocr"
+    reading_order = "legacy"
+    layout_mode = normalize_layout(layout)
     try:
         async with _sem():
             loop = asyncio.get_running_loop()
             if isPdf:
-                texts, boxes, pages, extract_mode = await loop.run_in_executor(
-                    None, _recognizePdfSync, fileBytes
+                texts, boxes, pages, extract_mode, reading_order = (
+                    await loop.run_in_executor(
+                        None,
+                        partial(_recognizePdfSync, fileBytes, layout=layout_mode),
+                    )
                 )
             else:
-                texts, boxes, pages, extract_mode = await loop.run_in_executor(
-                    None, _recognizeImageSync, fileBytes
+                texts, boxes, pages, extract_mode, reading_order = (
+                    await loop.run_in_executor(
+                        None,
+                        partial(_recognizeImageSync, fileBytes, layout=layout_mode),
+                    )
                 )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -274,6 +359,7 @@ async def recognize(
                 elapsed_ms=elapsed_ms,
                 model=modelLabel(),
                 extract_mode=extract_mode,
+                reading_order=reading_order,
             ),
         )
         _logResult(
@@ -281,7 +367,9 @@ async def recognize(
         )
         return res
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    res = _buildResponse(texts, boxes, pages, elapsed_ms, extract_mode)
+    res = _buildResponse(
+        texts, boxes, pages, elapsed_ms, extract_mode, reading_order=reading_order
+    )
     _logResult(
         caller=caller, via=via, filename=filename, bytes_len=len(fileBytes), res=res
     )
@@ -293,6 +381,7 @@ async def recognizeFromPath(
     *,
     caller: str = "",
     via: str = "mcp",
+    layout: str = "legacy",
 ) -> OcrResponse:
     """从本机文件路径识别（MCP tool 用）。"""
     path = filePath.strip()
@@ -305,4 +394,6 @@ async def recognizeFromPath(
         return OcrResponse(code=400, message=f"读取文件失败: {e}")
     from pathlib import Path
 
-    return await recognize(data, Path(path).name, caller=caller, via=via)
+    return await recognize(
+        data, Path(path).name, caller=caller, via=via, layout=layout
+    )
